@@ -1,7 +1,7 @@
 import streamlit as st
 from src.data_manager import authenticate_user, register_user
  
-from src.api_client import cari_resep_spoonacular 
+# from src.api_client import cari_resep_spoonacular 
 
 # Judul Aplikasi
 st.title("Ini judul nya")
@@ -33,15 +33,14 @@ if st.session_state['logged_in']:
     
     st.header(f"Halo {st.session_state['username']}, mau masak apa hari ini?")
     
-    tab_cari, tab_ai = st.tabs(["🔍 Pencarian Resep", "🤖 Tanya AI (Gemini)"])
+    tab_cari, tab_ai = st.tabs([" Pencarian menu", "🤖 Tanya AI (Gemini)"])
     
 #tab
     with tab_cari:
         st.subheader("Cari Resep Berdasarkan Bahan")
         
         input_bahan_string = st.text_input(
-            "Masukkan bahan-bahan yang Anda miliki (pisahkan dengan koma):", 
-            placeholder="Contoh: chicken, soy sauce, rice"
+            "Masukkan nama makanan", 
         )
         
         if st.button("Cari Resep"):
