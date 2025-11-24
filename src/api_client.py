@@ -1,79 +1,79 @@
-import requests
-import os
-from dotenv import load_dotenv  # <-- Memuat library untuk membaca file .env
+import requests # Library untuk mengirim permintaan ke internet (API)
+import os       # Library untuk mengakses sistem operasi (mengambil API Key)
+from dotenv import load_dotenv # Library untuk membaca file .env
 
-# Memuat variabel dari file .env (seperti SPOONACULAR_API_KEY)
-load_dotenv()
+# 1. Memuat konfigurasi rahasia
+load_dotenv() # Membaca file .env
+API_KEY = os.environ.get("SPOONACULAR_API_KEY") # Mengambil kunci rahasia
 
-# 1. Ambil API Key dari environment yang sudah dimuat oleh load_dotenv()
-API_KEY = os.environ.get("SPOONACULAR_API_KEY")
+# URL (Alamat) API Spoonacular
+BASE_URL = "https://api.spoonacular.com/recipes/complexSearch" # Untuk cari resep
+RANDOM_URL = "https://api.spoonacular.com/recipes/random"      # Untuk resep acak
 
-# 2. Tentukan URL utama API Spoonacular
-BASE_URL = "https://api.spoonacular.com/recipes/complexSearch"
-
-def cari_resep_spoonacular(bahan_bahan_list):
+# --- FUNGSI PENCARIAN UTAMA ---
+# Kita tambahkan parameter baru: diet, tipe, dan max_kalori (defaultnya None/Kosong)
+def cari_resep_spoonacular(bahan_bahan_list, diet=None, tipe=None, max_kalori=None):
     """
-    Mencari resep di Spoonacular berdasarkan bahan,
-    dengan filter masakan Indonesia dan data nutrisi.
+    Mengirim permintaan ke Spoonacular dengan filter yang dipilih pengguna.
     """
-    
-    # Cek apakah API Key berhasil dimuat dari file .env
-    if not API_KEY:
-        print("="*50)
-        print("ERROR: SPOONACULAR_API_KEY tidak ditemukan.")
-        print("Pastikan Anda sudah membuat file .env di folder utama")
-        print("dan mengisinya dengan: SPOONACULAR_API_KEY='key_anda'")
-        print("="*50)
-        return None
+    # Cek keamanan: Pastikan API Key ada
+    if not API_KEY: 
+        print("Error: API Key hilang.")
+        return []
 
-    # 3. Ubah list bahan menjadi satu string yang dipisah koma
-    #    Contoh: ["ayam", "kecap"] -> "ayam,kecap"
+    # Mengubah list ["ayam", "nasi"] menjadi string "ayam,nasi"
     bahan_string = ",".join(bahan_bahan_list)
 
-    # 4. Siapkan parameter untuk dikirim ke API
+    # Menyiapkan 'Surat' permintaan (Parameters)
     params = {
-        "apiKey": API_KEY,
-        "includeIngredients": bahan_string,  # <-- Sesuai input pengguna
-        "cuisine": "Indonesian",             # <-- Filter masakan Indonesia
-        "addRecipeNutrition": True,          # <-- Minta data nutrisi (penting!)
-        "number": 5                          # <-- Minta 5 resep (hemat kuota gratis)
+        "apiKey": API_KEY,              # Kunci akses
+        "includeIngredients": bahan_string, # Bahan yang dicari
+        "cuisine": "Indonesian",        # Filter masakan Indonesia (bisa dihapus jika mau global)
+        "addRecipeNutrition": True,     # Minta data gizi
+        "number": 9,                    # Minta 9 hasil
+        "fillIngredients": True         # Minta info detail bahan
     }
 
-    # 5. Lakukan panggilan API menggunakan library requests
+    # --- LOGIKA FILTER TAMBAHAN ---
+    # Jika pengguna memilih Diet (misal: Vegetarian), masukkan ke params
+    if diet and diet != "Semua":
+        params['diet'] = diet
+    
+    # Jika pengguna memilih Tipe (misal: Sarapan), masukkan ke params
+    if tipe and tipe != "Semua":
+        params['type'] = tipe.lower() # API butuh huruf kecil (breakfast)
+
+    # Jika pengguna mengatur Slider Kalori, masukkan ke params
+    if max_kalori and max_kalori < 1000: # Jika diset < 1000, baru kita filter
+        params['maxCalories'] = max_kalori
+
+    # Mengirim permintaan ke server Spoonacular
     try:
         response = requests.get(BASE_URL, params=params)
-        
-        # Jika request gagal (misal: API key salah, kuota habis)
-        response.raise_for_status() 
-        
-        data = response.json()
-        
-        # API mengembalikan hasil dalam key 'results'
-        return data.get('results', []) # Gunakan .get() agar lebih aman
+        response.raise_for_status() # Cek jika ada error (misal koneksi putus)
+        data = response.json()      # Ubah hasil jadi format Python (Dictionary)
+        return data.get('results', []) # Ambil bagian 'results'
+    except Exception as e:
+        print(f"Error API Search: {e}")
+        return []
 
-    except requests.exceptions.RequestException as e:
-        print(f"Error saat memanggil API: {e}")
-        return None
-
-# ----- (Blok ini untuk mengetes file ini secara langsung) -----
-# Anda bisa menjalankan 'python src/api_client.py' di terminal
-if __name__ == "__main__":
-    # Ganti ini dengan bahan yang ingin Anda tes
-    bahan_tes = ["chicken", "soy sauce", "rice"] # (ayam, kecap, nasi)
+# --- FUNGSI RESEP RANDOM ---
+def dapatkan_resep_random(jumlah=3):
+    """Mengambil resep acak untuk inspirasi dashboard."""
+    if not API_KEY: return []
     
-    print(f"Mencari resep dengan bahan: {', '.join(bahan_tes)}")
-    hasil = cari_resep_spoonacular(bahan_tes)
+    params = {
+        "apiKey": API_KEY,
+        "number": jumlah,
+        "tags": "main course", # Hanya ambil makanan berat
+        "includeNutrition": True
+    }
     
-    if hasil:
-        print(f"--- Menemukan {len(hasil)} resep ---")
-        for resep in hasil:
-            # Ambil data kalori dari bagian nutrisi
-            if 'nutrition' in resep and 'nutrients' in resep['nutrition'] and len(resep['nutrition']['nutrients']) > 0:
-                kalori = resep['nutrition']['nutrients'][0]['amount']
-                print(f"- {resep['title']} (Kalori: {kalori} kcal)")
-            else:
-                print(f"- {resep['title']} (Data nutrisi tidak tersedia)")
-    elif hasil == []:
-        print("Tidak ada resep yang ditemukan dengan bahan tersebut.")
-    else:
-        print("Gagal mengambil data dari API (Cek API Key di file .env).")
+    try:
+        response = requests.get(RANDOM_URL, params=params)
+        response.raise_for_status()
+        # API Random struktur datanya 'recipes', bukan 'results'
+        return response.json().get('recipes', [])
+    except Exception as e:
+        print(f"Error API Random: {e}")
+        return []
