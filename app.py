@@ -1,6 +1,6 @@
 import streamlit as st # Library utama untuk membuat website
 from src.data_manager import authenticate_user, register_user
-from src.api_client import cari_resep_spoonacular, dapatkan_resep_random 
+# from src.api_client import cari_resep_spoonacular, dapatkan_resep_random 
 
 # 1. Konfigurasi Halaman (Judul di Tab Browser & Layout Lebar)
 st.set_page_config(layout="wide", page_title="Resep Hari Ini")
