@@ -9,6 +9,7 @@ API_KEY = os.environ.get("SPOONACULAR_API_KEY") # Mengambil kunci rahasia
 # URL (Alamat) API Spoonacular
 BASE_URL = "https://api.spoonacular.com/recipes/complexSearch" # Untuk cari resep
 RANDOM_URL = "https://api.spoonacular.com/recipes/random"      # Untuk resep acak
+DETAIL_URL = "https://api.spoonacular.com/recipes/{id}/information" # Untuk detail resep
 
 # --- FUNGSI PENCARIAN UTAMA ---
 # Kita tambahkan parameter baru: diet, tipe, dan max_kalori (defaultnya None/Kosong)
@@ -77,3 +78,24 @@ def dapatkan_resep_random(jumlah=3):
     except Exception as e:
         print(f"Error API Random: {e}")
         return []
+
+# --- FUNGSI DETAIL RESEP ---
+def dapatkan_detail_resep(id_resep):
+    """Mengambil detail lengkap satu resep berdasarkan ID-nya."""
+    if not API_KEY:
+        print("Error: API Key hilang.")
+        return None
+
+    url = DETAIL_URL.format(id=id_resep)
+    params = {
+        "apiKey": API_KEY,
+        "includeNutrition": True # Minta info nutrisi juga
+    }
+
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        print(f"Error API Detail: {e}")
+        return None
