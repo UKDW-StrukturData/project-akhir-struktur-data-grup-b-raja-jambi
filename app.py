@@ -1,6 +1,7 @@
 import streamlit as st
 from src.data_manager import authenticate_user, register_user
-from src.api_client import cari_resep_spoonacular, dapatkan_resep_random, dapatkan_detail_resep
+from src.api_client import cari_resep_spoonacular, dapatkan_resep_random as client_dapatkan_resep_random, dapatkan_detail_resep
+import os
 
 st.set_page_config(layout="wide", page_title="Resep Hari Ini")
 
@@ -68,6 +69,27 @@ def tampilkan_halaman_detail(recipe_id):
 
         st.subheader("Instruksi")
         st.markdown(detail_resep.get('instructions', 'Instruksi tidak tersedia.'), unsafe_allow_html=True)
+
+def dapatkan_resep_random_streamlit(jumlah=20):
+    """Wrapper khusus Streamlit: ambil API key dari st.secrets atau os.getenv(),
+    lalu panggil client_dapatkan_resep_random() dari src.api_client.
+    - Membuat error UI jika key tidak ditemukan.
+    - Memastikan pengambilan resep punya timeout dan handling.
+    """
+    api_key = st.secrets.get("SPOONACULAR_API_KEY") if hasattr(st, 'secrets') else None
+    if not api_key:
+        api_key = os.getenv("SPOONACULAR_API_KEY")
+
+    if not api_key:
+        st.error("❌ API Key Spoonacular Kosong! Pastikan sudah diatur di Secrets atau .env")
+        return []
+
+    # Gunakan client function yang sudah mengambil timeout dan handling
+    try:
+        return client_dapatkan_resep_random(jumlah=jumlah, api_key=api_key)
+    except Exception as e:
+        st.error(f"Terjadi masalah saat mengambil resep: {e}")
+        return []
 
 def handle_login(username, password):
     if authenticate_user(username, password):
@@ -142,7 +164,7 @@ if st.session_state['logged_in']:
                 
                 @st.cache_data(ttl=3600)
                 def get_cached_random():
-                    return dapatkan_resep_random(jumlah=20)
+                    return dapatkan_resep_random_streamlit(jumlah=20)
 
                 with st.spinner("Mengambil rekomendasi chef..."):
                     resep_random = get_cached_random()
