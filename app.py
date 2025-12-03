@@ -2,6 +2,10 @@ import streamlit as st
 from src.data_manager import authenticate_user, register_user
 from src.api_client import cari_resep_spoonacular, dapatkan_resep_random, dapatkan_detail_resep
 
+@st.cache_data(ttl=3600)
+def get_cached_random():
+    return dapatkan_resep_random(jumlah=20)
+
 st.set_page_config(layout="wide", page_title="Resep Hari Ini")
 
 st.title("Resep Hari Ini")
@@ -116,41 +120,59 @@ if st.session_state['logged_in']:
 
             st.markdown("---")
 
-            if cari_clicked and input_bahan_string:
-                bahan_list = [bahan.strip() for bahan in input_bahan_string.split(',')]
-                
-                status_text = f"🔍 Mencari: **{input_bahan_string}**"
-                if filter_diet != "Semua": status_text += f" | Diet: {filter_diet}"
-                if filter_kalori < 1000: status_text += f" | Max {filter_kalori} Kcal"
-                st.write(status_text)
-                
-                with st.spinner("Mencari resep..."):
-                    hasil_resep = cari_resep_spoonacular(
-                        bahan_list, 
-                        diet=filter_diet, 
-                        tipe=filter_tipe, 
-                        max_kalori=filter_kalori
-                    )
-                
-                if hasil_resep:
-                    tampilkan_grid_resep(hasil_resep)
-                else:
-                    st.warning("Tidak ditemukan resep. Coba kurangi filter atau ganti bahan.")
-            
-            else:
-                st.subheader("✨ Inspirasi Menu Buat Kamu")
-                
-                @st.cache_data(ttl=3600)
-                def get_cached_random():
-                    return dapatkan_resep_random(jumlah=20)
+            # ... kode sebelumnya (bagian kolom input) ...
+        # --- TAMBAHAN WAJIB 1: Inisialisasi State Pencarian ---
+        if 'hasil_pencarian' not in st.session_state:
+            st.session_state['hasil_pencarian'] = None
+        if 'last_query' not in st.session_state:
+            st.session_state['last_query'] = ""
 
-                with st.spinner("Mengambil rekomendasi chef..."):
-                    resep_random = get_cached_random()
+        st.markdown("---") 
+
+        # --- PERBAIKAN LOGIKA UTAMA ---
+        # Jika tombol cari diklik, KITA SIMPAN HASILNYA ke session_state
+        if cari_clicked and input_bahan_string:
+            bahan_list = [bahan.strip() for bahan in input_bahan_string.split(',')]
+            
+            # Update teks status terakhir
+            status_text = f"🔍 Mencari: **{input_bahan_string}**"
+            if filter_diet != "Semua": status_text += f" | Diet: {filter_diet}"
+            if filter_kalori < 1000: status_text += f" | Max {filter_kalori} Kcal"
+            st.session_state['last_query'] = status_text
+            
+            with st.spinner("Mencari resep..."):
+                # Panggil API
+                hasil = cari_resep_spoonacular(
+                    bahan_list, 
+                    diet=filter_diet, 
+                    tipe=filter_tipe, 
+                    max_kalori=filter_kalori
+                )
+                # SIMPAN KE INGATAN!
+                st.session_state['hasil_pencarian'] = hasil
+
+        # Tampilkan hasil DARI INGATAN (bukan dari tombol cari_clicked lagi)
+        if st.session_state['hasil_pencarian'] is not None:
+            # Tampilkan teks query terakhir
+            if st.session_state['last_query']:
+                st.write(st.session_state['last_query'])
+
+            if st.session_state['hasil_pencarian']:
+                # Panggil fungsi grid (nah, tombol di dalam sini baru bisa jalan sekarang)
+                tampilkan_grid_resep(st.session_state['hasil_pencarian'])
+            else:
+                st.warning("Tidak ditemukan resep. Coba kurangi filter atau ganti bahan.")
+        
+        elif not st.session_state['hasil_pencarian']: 
+             st.subheader("✨ Inspirasi Menu Buat Kamu")
+             
+             with st.spinner("Mengambil rekomendasi chef..."):
+                resep_random = get_cached_random()
                 
-                if resep_random:
-                    tampilkan_grid_resep(resep_random)
-                else:
-                    st.info("Siap mencari resep! Ketik bahan di atas.")
+             if resep_random:
+                tampilkan_grid_resep(resep_random)
+             else:
+                st.info("Siap mencari resep! Ketik bahan di atas.")
 
         with tab_ai:
             st.subheader("Asisten Gizi")
