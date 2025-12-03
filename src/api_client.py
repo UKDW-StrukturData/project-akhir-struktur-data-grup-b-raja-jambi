@@ -59,19 +59,29 @@ def cari_resep_spoonacular(bahan_bahan_list, diet=None, tipe=None, max_kalori=No
         return []
 
 # --- FUNGSI RESEP RANDOM ---
-def dapatkan_resep_random(jumlah=3):
-    """Mengambil resep acak untuk inspirasi dashboard."""
-    if not API_KEY: return []
-    
+def dapatkan_resep_random(jumlah=3, api_key=None):
+    """Mengambil resep acak untuk inspirasi dashboard.
+
+    Parameters
+    - jumlah: jumlah resep yang diminta
+    - api_key: jika disediakan, gunakan ini (berguna untuk UI yang pakai st.secrets)
+    """
+    # Jika api_key tidak diberikan, fallback ke environment
+    if not api_key:
+        api_key = API_KEY
+    if not api_key:
+        # Jangan raise; biarkan caller (UI) menampilkan pesan error
+        return []
+
     params = {
-        "apiKey": API_KEY,
+        "apiKey": api_key,
         "number": jumlah,
         "tags": "main course", # Hanya ambil makanan berat
         "includeNutrition": True
     }
-    
+
     try:
-        response = requests.get(RANDOM_URL, params=params)
+        response = requests.get(RANDOM_URL, params=params, timeout=10)
         response.raise_for_status()
         # API Random struktur datanya 'recipes', bukan 'results'
         return response.json().get('recipes', [])

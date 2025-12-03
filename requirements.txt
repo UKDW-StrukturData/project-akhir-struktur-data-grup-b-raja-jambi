@@ -1,5 +1,9 @@
 streamlit
-requests
-google-generativeai
 pandas
+requests
+openpyxl
+google-generativeai
+python-dotenv
 matplotlib
+pillow
+altair
