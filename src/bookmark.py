@@ -1,65 +1,97 @@
 import json
 import os
 
-# Lokasi file penyimpanan bookmark
+# --- KONFIGURASI FILE ---
 DATA_FOLDER = 'data'
 BOOKMARK_FILE = os.path.join(DATA_FOLDER, 'bookmarks.json')
 
 def ensure_data_exists():
-    """Memastikan folder data dan file json tersedia"""
+    """
+    Memastikan folder 'data' dan file 'bookmarks.json' tersedia.
+    Jika tidak ada, akan dibuat otomatis.
+    """
     if not os.path.exists(DATA_FOLDER):
         os.makedirs(DATA_FOLDER)
+    
     if not os.path.exists(BOOKMARK_FILE):
         with open(BOOKMARK_FILE, 'w') as f:
+            # Inisialisasi dengan dictionary kosong
             json.dump({}, f)
 
 def load_bookmarks():
-    """Mengambil semua data bookmark"""
+    """
+    Membaca seluruh data bookmark dari file JSON.
+    """
     ensure_data_exists()
     try:
         with open(BOOKMARK_FILE, 'r') as f:
             return json.load(f)
-    except Exception:
+    except (json.JSONDecodeError, FileNotFoundError):
         return {}
 
 def save_bookmarks(data):
-    """Menyimpan data bookmark"""
+    """
+    Menulis kembali data ke file JSON.
+    """
     ensure_data_exists()
     with open(BOOKMARK_FILE, 'w') as f:
+        # indent=4 biar rapi kalau mau dibaca manusia, 
+        # tapi karena isinya cuma angka, ini tetap hemat memori.
         json.dump(data, f, indent=4)
 
-def add_bookmark(username, recipe_data):
-    """Menambah bookmark untuk user tertentu"""
+def add_bookmark(username, recipe_id):
+    """
+    Menambahkan ID resep ke daftar bookmark user.
+    Hanya menyimpan angka (ID), bukan seluruh data resep.
+    """
+    if not username:
+        return False
+
     data = load_bookmarks()
+    
+    # Buat list kosong jika user belum punya bookmark
     if username not in data:
         data[username] = []
     
-    # Cek duplikasi (biar gak simpen resep yg sama 2x)
-    existing_ids = [r['id'] for r in data[username]]
-    if recipe_data['id'] not in existing_ids:
-        # Kita simpan data pentingnya aja biar hemat storage
-        clean_data = {
-            'id': recipe_data['id'],
-            'title': recipe_data.get('title'),
-            'image': recipe_data.get('image'),
-            'nutrition': recipe_data.get('nutrition')
-        }
-        data[username].append(clean_data)
-        save_bookmarks(data)
-        return True
-    return False
+    try:
+        # Pastikan ID disimpan sebagai integer agar seragam
+        rid = int(recipe_id)
+        
+        # Cek duplikasi: hanya simpan jika belum ada
+        if rid not in data[username]:
+            data[username].append(rid)
+            save_bookmarks(data)
+            return True
+        else:
+            # Sudah ada, anggap sukses tapi tidak nambah
+            return False
+            
+    except ValueError:
+        print(f"Error: ID resep '{recipe_id}' tidak valid.")
+        return False
 
 def remove_bookmark(username, recipe_id):
-    """Menghapus bookmark"""
+    """
+    Menghapus ID resep dari daftar bookmark user.
+    """
+    if not username:
+        return False
+
     data = load_bookmarks()
+    
     if username in data:
-        # Filter list, buang yang ID-nya cocok
-        data[username] = [r for r in data[username] if r['id'] != recipe_id]
-        save_bookmarks(data)
-        return True
+        try:
+            rid = int(recipe_id)
+            if rid in data[username]:
+                data[username].remove(rid)
+                save_bookmarks(data)
+                return True
+        except ValueError:
+            return False
+            
     return False
 
 def get_user_bookmarks(username):
-    """Ambil list bookmark milik user tertentu"""
     data = load_bookmarks()
+    # Kembalikan list kosong [] jika user tidak ditemukan
     return data.get(username, [])

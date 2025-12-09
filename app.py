@@ -1,11 +1,20 @@
 import streamlit as st
 from src.data_manager import authenticate_user, register_user
 from src.api_client import cari_resep_spoonacular, dapatkan_resep_random as client_dapatkan_resep_random, dapatkan_detail_resep
-# Pastikan nama file di folder src kamu adalah bookmark_manager.py
 from src.bookmark import add_bookmark, remove_bookmark, get_user_bookmarks
+# Import modul PDF yang baru dibuat
+from src.pdf_utils import generate_pdf_bytes
 import os
 from dotenv import load_dotenv
 
+# --- DEBUGGING (HAPUS NANTI) ---
+import os
+key_env = os.getenv("SPOONACULAR_API_KEY")
+key_secret = st.secrets["SPOONACULAR_API_KEY"] if "SPOONACULAR_API_KEY" in st.secrets else "GAK ADA DI SECRETS"
+
+st.write(f"Key dari .env: {key_env}")
+st.write(f"Key dari Secrets: {key_secret}")
+# -------------------------------
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(layout="wide", page_title="Resep Hari Ini")
 
@@ -15,12 +24,13 @@ def get_cached_random():
     """Wrapper untuk mengambil resep random dengan cache"""
     api_key = None
     try:
-        # Coba ambil dari secrets.toml (Pastikan namanya pake 's' di akhir)
+        # Coba ambil dari secrets.toml
         if "SPOONACULAR_API_KEY" in st.secrets:
             api_key = st.secrets["SPOONACULAR_API_KEY"]
     except Exception:
         pass 
 
+    # Cek .env jika di secrets tidak ada
     if not api_key:
         load_dotenv()
         api_key = os.getenv("SPOONACULAR_API_KEY")
@@ -33,12 +43,9 @@ def get_cached_random():
     except Exception:
         return []
 
-# --- INI BAGIAN YANG TADI BIKIN ERROR ---
-# Gw udah tambahin parameter 'source="umum"' di sini biar dia gak kaget
 def tampilkan_grid_resep(daftar_resep, mode_hapus=False, source="umum"):
     """
-    Menampilkan resep dalam Grid.
-    Parameter 'source' wajib ada buat membedakan ID tombol di tiap Tab.
+    Menampilkan resep dalam bentuk Grid (3 kolom).
     """
     if not daftar_resep:
         st.warning("Belum ada resep di sini.")
@@ -61,7 +68,7 @@ def tampilkan_grid_resep(daftar_resep, mode_hapus=False, source="umum"):
                     # Judul
                     st.subheader(resep.get('title', 'Tanpa Judul'))
                     
-                    # Kalori
+                    # Info Kalori (Opsional)
                     kalori_text = ""
                     if 'nutrition' in resep and 'nutrients' in resep['nutrition']:
                         nutrients = resep['nutrition']['nutrients']
@@ -71,11 +78,11 @@ def tampilkan_grid_resep(daftar_resep, mode_hapus=False, source="umum"):
                     if kalori_text:
                         st.caption(kalori_text)
                     
-                    # --- TOMBOL AKSI (DENGAN KUNCI UNIK) ---
+                    # --- TOMBOL AKSI ---
                     c_btn1, c_btn2 = st.columns([1, 1])
                     
                     with c_btn1:
-                        # Key unik gabungan ID resep + sumber (cari/fav/dll)
+                        # Key unik gabungan ID resep + sumber
                         key_lihat = f"det_{resep['id']}_{source}"
                         if st.button("Lihat", key=key_lihat, use_container_width=True):
                             st.session_state['view'] = 'detail'
@@ -95,7 +102,8 @@ def tampilkan_grid_resep(daftar_resep, mode_hapus=False, source="umum"):
                             key_simpan = f"sav_{resep['id']}_{source}"
                             if st.button("❤️ Simpan", key=key_simpan, use_container_width=True):
                                 if current_user:
-                                    if add_bookmark(current_user, resep):
+                                    # PENTING: Simpan ID saja!
+                                    if add_bookmark(current_user, resep['id']):
                                         st.toast("Resep berhasil disimpan!", icon="✅")
                                     else:
                                         st.toast("Resep ini sudah ada di favoritmu.", icon="ℹ️")
@@ -103,7 +111,9 @@ def tampilkan_grid_resep(daftar_resep, mode_hapus=False, source="umum"):
                                     st.error("Login dulu bos!")
 
 def tampilkan_halaman_detail(recipe_id):
-    """Menampilkan detail satu resep"""
+    """
+    Menampilkan detail satu resep + TOMBOL DOWNLOAD PDF
+    """
     if st.button("<- Kembali"):
         st.session_state['view'] = 'grid'
         st.session_state['selected_recipe_id'] = None
@@ -117,9 +127,32 @@ def tampilkan_halaman_detail(recipe_id):
         if detail_resep.get('image'):
             st.image(detail_resep['image'])
         
-        if st.button("❤️ Simpan ke Favorit", key="save_detail_page"):
-             add_bookmark(st.session_state['username'], detail_resep)
-             st.success("Tersimpan!")
+        # --- AREA TOMBOL AKSI (Simpan & PDF) ---
+        col_btn1, col_btn2 = st.columns([1, 1])
+        
+        with col_btn1:
+            if st.button("❤️ Simpan ke Favorit", key="save_detail_page", use_container_width=True):
+                 add_bookmark(st.session_state['username'], detail_resep['id'])
+                 st.success("Tersimpan!")
+
+        with col_btn2:
+            # Generate PDF secara real-time
+            try:
+                pdf_data = generate_pdf_bytes(detail_resep)
+                
+                # Buat nama file bersih (spasi jadi underscore)
+                nama_file = detail_resep['title'].replace(" ", "_").lower() + ".pdf"
+                
+                st.download_button(
+                    label="📄 Export ke PDF",
+                    data=pdf_data,
+                    file_name=nama_file,
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"Gagal membuat PDF: {e}")
+        # ---------------------------------------
 
         st.subheader("Ringkasan")
         st.markdown(detail_resep.get('summary', 'Ringkasan tidak tersedia.'), unsafe_allow_html=True)
@@ -223,7 +256,6 @@ if st.session_state['logged_in']:
                 if st.button("❌ Hapus Pencarian & Kembali"):
                     st.session_state['hasil_pencarian'] = None
                     st.rerun()
-                # PENTING: source="cari" biar kuncinya unik
                 tampilkan_grid_resep(st.session_state['hasil_pencarian'], source="cari")
             
             else:
@@ -231,31 +263,49 @@ if st.session_state['logged_in']:
                 with st.spinner("Mengambil rekomendasi chef..."):
                     resep_random = get_cached_random()
                 if resep_random:
-                    # PENTING: source="rekomen" biar kuncinya unik
                     tampilkan_grid_resep(resep_random, source="rekomen")
                 else:
                     st.info("API Key belum diset atau kuota habis.")
 
-        # TAB 2: FAVORIT
+        # TAB 2: FAVORIT (LOGIKA BARU)
         with tab_favorit:
             st.subheader("Koleksi Resep Favoritmu")
-            my_bookmarks = get_user_bookmarks(st.session_state['username'])
             
-            if my_bookmarks:
-                # PENTING: source="fav" biar kuncinya unik & mode_hapus=True
-                tampilkan_grid_resep(my_bookmarks, mode_hapus=True, source="fav")
+            # 1. Ambil list ID bookmark user
+            list_id_bookmark = get_user_bookmarks(st.session_state['username'])
+            
+            data_bookmark_lengkap = []
+            
+            if list_id_bookmark:
+                # 2. Loop ID untuk ambil data lengkap dari API
+                with st.spinner(f"Memuat {len(list_id_bookmark)} resep favorit dari database Raja Iblis..."):
+                    # Kita loop satu-satu untuk fetch detail
+                    for rid in list_id_bookmark:
+                        try:
+                            detail = dapatkan_detail_resep(rid)
+                            if detail:
+                                data_bookmark_lengkap.append(detail)
+                        except Exception:
+                            pass # Skip jika gagal load
+                
+                if data_bookmark_lengkap:
+                    # 3. Tampilkan hasilnya
+                    tampilkan_grid_resep(data_bookmark_lengkap, mode_hapus=True, source="fav")
+                else:
+                    st.error("Gagal memuat detail resep (Cek koneksi internet).")
             else:
                 st.info("Kamu belum menyimpan resep apapun. Klik tombol ❤️ pada resep untuk menyimpan.")
 
-        # TAB 3: AI
+        # TAB 3: AI (COMING SOON)
         with tab_ai:
             st.subheader("Asisten Gizi")
-            st.info("Fitur ini akan segera hadir!")
+            st.info("Fitur 'Chef AI' sedang dalam perbaikan oleh teman Rio. Ditunggu ya!")
 
     elif st.session_state['view'] == 'detail':
         tampilkan_halaman_detail(st.session_state['selected_recipe_id'])
 
 else:
+    # HALAMAN LOGIN / DAFTAR
     st.info("Silakan Login atau Daftar untuk melihat menu resep.")
     tab_login, tab_signup = st.tabs(["Login", "Daftar"])
     
