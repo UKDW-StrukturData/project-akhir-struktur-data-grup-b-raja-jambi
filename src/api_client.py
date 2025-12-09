@@ -31,7 +31,7 @@ def cari_resep_spoonacular(bahan_bahan_list, diet=None, tipe=None, max_kalori=No
         "includeIngredients": bahan_string, # Bahan yang dicari
         "cuisine": "Indonesian",        # Filter masakan Indonesia (bisa dihapus jika mau global)
         "addRecipeNutrition": True,     # Minta data gizi
-        "number": 9,                    # Minta 9 hasil
+        "number": 30,                    # Minta 30 hasil
         "fillIngredients": True         # Minta info detail bahan
     }
 

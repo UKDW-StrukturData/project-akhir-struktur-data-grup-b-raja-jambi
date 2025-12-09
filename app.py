@@ -162,6 +162,7 @@ if 'selected_recipe_id' not in st.session_state:
 if 'hasil_pencarian' not in st.session_state:
     st.session_state['hasil_pencarian'] = None
 
+
 # --- MAIN UI ---
 st.title("Resep Hari Ini")
 
