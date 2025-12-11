@@ -7,4 +7,7 @@ python-dotenv
 matplotlib
 pillow
 altair
-google-generativeai
+fpdf
+beautifulsoup4
+python-docx
+pypdf
