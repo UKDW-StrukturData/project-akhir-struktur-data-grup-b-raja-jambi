@@ -1,105 +1,154 @@
-from fpdf import FPDF
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch, mm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak, Table, TableStyle
+from reportlab.lib import colors
+from reportlab.pdfgen import canvas
 from bs4 import BeautifulSoup
 import requests
 from io import BytesIO
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import os
 
-class ResepPDF(FPDF):
-    def header(self):
-        # KOSONGIN AJA BIAR GAK ADA WATERMARK / TULISAN DI ATAS
-        pass
-
-    def footer(self):
-        # Footer tetap ada nomor halaman di bawah (kecil)
-        self.set_y(-15)
-        self.set_font('Helvetica', 'I', 8)
-        self.set_text_color(150, 150, 150)
-        self.cell(0, 10, f'Halaman {self.page_no()}', align='C')
+# Coba register font untuk mendukung Unicode
+try:
+    # Windows font path
+    font_path = "C:\\Windows\\Fonts\\arial.ttf"
+    if os.path.exists(font_path):
+        pdfmetrics.registerFont(TTFont('Arial', font_path))
+        HAS_UNICODE_FONT = True
+    else:
+        HAS_UNICODE_FONT = False
+except Exception:
+    HAS_UNICODE_FONT = False
 
 def clean_html(raw_html):
-    """Membersihkan tag HTML"""
+    """Membersihkan tag HTML dan encode dengan benar"""
     if not raw_html:
         return ""
     try:
-        soup = BeautifulSoup(str(raw_html), "html.parser")
-        return soup.get_text()
-    except Exception:
-        return str(raw_html)
+        # Convert ke string jika belum
+        raw_html = str(raw_html)
+        soup = BeautifulSoup(raw_html, "html.parser")
+        text = soup.get_text()
+        # Pastikan return string yang valid
+        return text.strip() if text else ""
+    except Exception as e:
+        print(f"Error cleaning HTML: {e}")
+        return str(raw_html).strip() if raw_html else ""
 
 def generate_pdf_bytes(resep_data):
-    # 1. Setup Halaman A4
-    pdf = ResepPDF(orientation='P', unit='mm', format='A4')
-    pdf.set_margins(15, 15, 15) # Kiri, Atas, Kanan
-    pdf.add_page()
-
-    # 2. JUDUL RESEP
-    pdf.set_font("Helvetica", "B", 24)
-    pdf.set_text_color(0, 0, 0)
-    pdf.set_x(15)
-    judul = clean_html(resep_data.get('title', 'Tanpa Judul'))
-    pdf.multi_cell(0, 10, judul, align='C')
-    pdf.ln(5)
-
-    # 3. GAMBAR (Dibuat lebih rapi & presisi)
-    image_url = resep_data.get('image')
-    if image_url:
-        try:
-            response = requests.get(image_url, timeout=5)
-            if response.status_code == 200:
-                img_data = BytesIO(response.content)
-                
-                # Tentukan Lebar Gambar (Misal 90mm biar gak kegedean)
-                img_w = 90
-                # Hitung posisi X biar bener-bener di tengah halaman A4 (210mm)
-                # Rumus: (Lebar Kertas - Lebar Gambar) / 2
-                x_center = (210 - img_w) / 2
-                
-                pdf.image(img_data, x=x_center, w=img_w)
-                pdf.ln(10)
-        except Exception:
-            pass
-
-    # RESET KURSOR (Wajib!)
-    pdf.set_x(15)
-
-    # 4. STATISTIK
-    waktu = resep_data.get('readyInMinutes', '-')
-    porsi = resep_data.get('servings', '-')
-    
-    pdf.set_font("Helvetica", "I", 12)
-    pdf.cell(0, 10, f"Waktu Masak: {waktu} Menit  |  Porsi: {porsi} Orang", align='C')
-    pdf.ln(15)
-
-    # 5. BAHAN-BAHAN
-    pdf.set_x(15)
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "Bahan-Bahan:")
-    pdf.ln(8)
-    
-    pdf.set_font("Helvetica", "", 12)
-    ingredients = resep_data.get('extendedIngredients', [])
-    if ingredients:
-        for ing in ingredients:
-            pdf.set_x(15)
-            original_text = clean_html(ing.get('original', ''))
-            pdf.multi_cell(0, 7, f"- {original_text}")
-    else:
-        pdf.cell(0, 10, "Data bahan tidak tersedia.")
-    pdf.ln(10)
-
-    # 6. CARA MEMBUAT
-    pdf.set_x(15)
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "Cara Membuat:")
-    pdf.ln(8)
-
-    pdf.set_font("Helvetica", "", 12)
-    instructions = resep_data.get('instructions')
-    
-    if instructions:
-        pdf.set_x(15)
-        clean_instructions = clean_html(instructions)
-        pdf.multi_cell(0, 7, clean_instructions)
-    else:
-        pdf.multi_cell(0, 7, "Instruksi tidak tersedia untuk resep ini.")
-
-    return bytes(pdf.output(dest='S'))
+    """Generate PDF dari data resep menggunakan ReportLab"""
+    try:
+        # Buat BytesIO untuk menyimpan PDF
+        pdf_buffer = BytesIO()
+        
+        # Buat PDF document
+        doc = SimpleDocTemplate(pdf_buffer, pagesize=A4,
+                               rightMargin=20, leftMargin=20,
+                               topMargin=20, bottomMargin=20)
+        
+        # Story untuk menampung semua elemen
+        story = []
+        
+        # Style
+        styles = getSampleStyleSheet()
+        
+        # Title style
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#000000'),
+            spaceAfter=12,
+            alignment=1  # Center
+        )
+        
+        # Heading style
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=14,
+            textColor=colors.HexColor('#333333'),
+            spaceAfter=8,
+            spaceBefore=8
+        )
+        
+        # Body style
+        body_style = ParagraphStyle(
+            'CustomBody',
+            parent=styles['BodyText'],
+            fontSize=11,
+            leading=14,
+            spaceAfter=6
+        )
+        
+        # 1. TITLE
+        judul = clean_html(resep_data.get('title', 'Tanpa Judul'))
+        if judul:
+            story.append(Paragraph(str(judul), title_style))
+        
+        story.append(Spacer(1, 0.3*inch))
+        
+        # 2. GAMBAR
+        image_url = resep_data.get('image')
+        if image_url:
+            try:
+                response = requests.get(image_url, timeout=5)
+                if response.status_code == 200:
+                    img_data = BytesIO(response.content)
+                    # Tentukan ukuran gambar
+                    img = Image(img_data, width=4.5*inch, height=3*inch)
+                    story.append(img)
+                    story.append(Spacer(1, 0.2*inch))
+            except Exception as e:
+                print(f"Error loading image: {e}")
+        
+        # 3. STATISTIK
+        waktu = resep_data.get('readyInMinutes', '-')
+        porsi = resep_data.get('servings', '-')
+        stats_text = f"<b>Waktu Masak:</b> {waktu} Menit  |  <b>Porsi:</b> {porsi} Orang"
+        story.append(Paragraph(stats_text, body_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # 4. BAHAN-BAHAN
+        story.append(Paragraph("Bahan-Bahan:", heading_style))
+        ingredients = resep_data.get('extendedIngredients', [])
+        if ingredients:
+            for ing in ingredients:
+                original_text = clean_html(ing.get('original', ''))
+                if original_text:
+                    story.append(Paragraph(f"• {str(original_text)}", body_style))
+        else:
+            story.append(Paragraph("Data bahan tidak tersedia.", body_style))
+        
+        story.append(Spacer(1, 0.2*inch))
+        
+        # 5. CARA MEMBUAT
+        story.append(Paragraph("Cara Membuat:", heading_style))
+        instructions = resep_data.get('instructions')
+        if instructions:
+            clean_instructions = clean_html(instructions)
+            if clean_instructions:
+                # Split instructions by line/paragraph untuk format lebih baik
+                instruction_text = str(clean_instructions)
+                # Limit length untuk menghindari overflow
+                if len(instruction_text) > 5000:
+                    instruction_text = instruction_text[:5000] + "..."
+                story.append(Paragraph(instruction_text, body_style))
+            else:
+                story.append(Paragraph("Instruksi tidak tersedia untuk resep ini.", body_style))
+        else:
+            story.append(Paragraph("Instruksi tidak tersedia untuk resep ini.", body_style))
+        
+        # Build PDF
+        doc.build(story)
+        
+        # Get bytes dan return
+        pdf_buffer.seek(0)
+        return pdf_buffer.getvalue()
+        
+    except Exception as e:
+        print(f"Error generating PDF: {e}")
+        raise

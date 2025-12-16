@@ -2,19 +2,10 @@ import streamlit as st
 from src.data_manager import authenticate_user, register_user
 from src.api_client import cari_resep_spoonacular, dapatkan_resep_random as client_dapatkan_resep_random, dapatkan_detail_resep
 from src.bookmark import add_bookmark, remove_bookmark, get_user_bookmarks
+from src.history import add_to_history, get_user_history, get_user_history_detailed, clear_user_history
 # Import modul PDF yang baru dibuat
 from src.pdf_utils import generate_pdf_bytes
-import os
-from dotenv import load_dotenv
 
-# --- DEBUGGING (HAPUS NANTI) ---
-import os
-key_env = os.getenv("SPOONACULAR_API_KEY")
-key_secret = st.secrets["SPOONACULAR_API_KEY"] if "SPOONACULAR_API_KEY" in st.secrets else "GAK ADA DI SECRETS"
-
-st.write(f"Key dari .env: {key_env}")
-st.write(f"Key dari Secrets: {key_secret}")
-# -------------------------------
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(layout="wide", page_title="Resep Hari Ini")
 
@@ -22,25 +13,11 @@ st.set_page_config(layout="wide", page_title="Resep Hari Ini")
 @st.cache_data(ttl=3600)
 def get_cached_random():
     """Wrapper untuk mengambil resep random dengan cache"""
-    api_key = None
     try:
-        # Coba ambil dari secrets.toml
-        if "SPOONACULAR_API_KEY" in st.secrets:
-            api_key = st.secrets["SPOONACULAR_API_KEY"]
-    except Exception:
-        pass 
-
-    # Cek .env jika di secrets tidak ada
-    if not api_key:
-        load_dotenv()
-        api_key = os.getenv("SPOONACULAR_API_KEY")
-    
-    if not api_key:
-        return [] 
-
-    try:
-        return client_dapatkan_resep_random(jumlah=12, api_key=api_key)
-    except Exception:
+        # Function dari api_client.py sudah handle API key dari berbagai sumber
+        return client_dapatkan_resep_random(jumlah=12)
+    except Exception as e:
+        print(f"Error getting cached random: {e}")
         return []
 
 def tampilkan_grid_resep(daftar_resep, mode_hapus=False, source="umum"):
@@ -120,10 +97,22 @@ def tampilkan_halaman_detail(recipe_id):
         st.rerun()
 
     with st.spinner("Mengambil detail resep..."):
-        detail_resep = dapatkan_detail_resep(recipe_id)
+        try:
+            detail_resep = dapatkan_detail_resep(recipe_id)
+        except Exception as e:
+            st.error(f"Error mengambil detail resep: {e}")
+            detail_resep = None
 
     if detail_resep:
-        st.title(detail_resep['title'])
+        # ===== CATAT KE HISTORY =====
+        current_user = st.session_state.get('username')
+        if current_user:
+            try:
+                add_to_history(current_user, recipe_id)
+            except Exception as e:
+                print(f"Error menambah history: {e}")
+        
+        st.title(detail_resep.get('title', 'Resep Tanpa Judul'))
         if detail_resep.get('image'):
             st.image(detail_resep['image'])
         
@@ -167,7 +156,8 @@ def tampilkan_halaman_detail(recipe_id):
         st.subheader("Instruksi")
         st.markdown(detail_resep.get('instructions', 'Instruksi tidak tersedia.'), unsafe_allow_html=True)
     else:
-        st.error("Gagal memuat detail resep.")
+        st.error(f"❌ Gagal memuat detail resep (ID: {recipe_id}). Cek koneksi internet atau API Key di .env")
+        st.info("💡 Buka terminal dan cek pesan error untuk detail lebih lanjut.")
 
 def handle_login(username, password):
     if authenticate_user(username, password):
@@ -210,7 +200,7 @@ if st.session_state['logged_in']:
     if st.session_state['view'] == 'grid':
         st.header(f"Mau Masak Apa Hari Ini, {st.session_state['username']}?")
         
-        tab_cari, tab_favorit, tab_ai = st.tabs(["🍽️ Cari Menu", "❤️ Favorit Saya", "🤖 Tanya Chef AI"])
+        tab_cari, tab_history, tab_favorit, tab_ai = st.tabs(["🍽️ Cari Menu", "⏱️ Riwayat Lihat", "❤️ Favorit Saya", "🤖 Tanya Chef AI"])
         
         # TAB 1: PENCARIAN
         with tab_cari:
@@ -267,7 +257,56 @@ if st.session_state['logged_in']:
                 else:
                     st.info("API Key belum diset atau kuota habis.")
 
-        # TAB 2: FAVORIT (LOGIKA BARU)
+        # TAB 2: HISTORY (RIWAYAT LIHAT)
+        with tab_history:
+            st.subheader("Riwayat Resep yang Sudah Dilihat")
+            
+            # 1. Ambil list ID history user
+            list_id_history = get_user_history(st.session_state['username'])
+            history_detailed = get_user_history_detailed(st.session_state['username'])
+            
+            data_history_lengkap = []
+            
+            if list_id_history:
+                # 2. Loop ID untuk ambil data lengkap dari API
+                with st.spinner(f"Memuat {len(list_id_history)} resep dari riwayat..."):
+                    for rid in list_id_history:
+                        try:
+                            detail = dapatkan_detail_resep(rid)
+                            if detail:
+                                data_history_lengkap.append(detail)
+                        except Exception:
+                            pass # Skip jika gagal load
+                
+                if data_history_lengkap:
+                    # 3. Tampilkan dengan info timestamp
+                    col_hapus, col_info = st.columns([1, 3])
+                    with col_hapus:
+                        if st.button("🗑️ Hapus Semua", use_container_width=True):
+                            clear_user_history(st.session_state['username'])
+                            st.success("Riwayat dihapus!")
+                            st.rerun()
+                    
+                    with col_info:
+                        st.caption(f"📊 Total: {len(list_id_history)} resep dilihat")
+                    
+                    st.markdown("---")
+                    
+                    # Tampilkan grid dengan timestamp
+                    tampilkan_grid_resep(data_history_lengkap, source="history")
+                    
+                    # Tampilkan info timestamp di bawah
+                    if history_detailed:
+                        st.markdown("---")
+                        with st.expander("📅 Detail Waktu Lihat"):
+                            for item in history_detailed[:10]:  # Tampilkan 10 terbaru
+                                st.caption(f"📌 ID {item.get('recipe_id')} - Dilihat: {item.get('viewed_at')}")
+                else:
+                    st.error("Gagal memuat detail resep (Cek koneksi internet).")
+            else:
+                st.info("Kamu belum melihat resep apapun. Coba cari dan lihat beberapa resep di tab 'Cari Menu'!")
+
+        # TAB 3: FAVORIT (LOGIKA BARU)
         with tab_favorit:
             st.subheader("Koleksi Resep Favoritmu")
             
@@ -296,7 +335,7 @@ if st.session_state['logged_in']:
             else:
                 st.info("Kamu belum menyimpan resep apapun. Klik tombol ❤️ pada resep untuk menyimpan.")
 
-        # TAB 3: AI (COMING SOON)
+        # TAB 4: AI (COMING SOON)
         with tab_ai:
             st.subheader("Asisten Gizi")
             st.info("Fitur 'Chef AI' sedang dalam perbaikan oleh teman Rio. Ditunggu ya!")

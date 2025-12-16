@@ -2,7 +2,7 @@ import requests # Library untuk mengirim permintaan ke internet (API)
 import os       # Library untuk mengakses sistem operasi (mengambil API Key)
 from dotenv import load_dotenv # Library untuk membaca file .env
 
-# 1. Memuat konfigurasi rahasia
+# 1. Memuat konfigurasi rahasia dari .env
 load_dotenv() # Membaca file .env
 API_KEY = os.environ.get("SPOONACULAR_API_KEY") # Mengambil kunci rahasia
 
@@ -19,7 +19,7 @@ def cari_resep_spoonacular(bahan_bahan_list, diet=None, tipe=None, max_kalori=No
     """
     # Cek keamanan: Pastikan API Key ada
     if not API_KEY: 
-        print("Error: API Key hilang.")
+        print("Error: API Key hilang - Pastikan SPOONACULAR_API_KEY ada di file .env")
         return []
 
     # Mengubah list ["ayam", "nasi"] menjadi string "ayam,nasi"
@@ -50,10 +50,21 @@ def cari_resep_spoonacular(bahan_bahan_list, diet=None, tipe=None, max_kalori=No
 
     # Mengirim permintaan ke server Spoonacular
     try:
-        response = requests.get(BASE_URL, params=params)
+        response = requests.get(BASE_URL, params=params, timeout=15)
         response.raise_for_status() # Cek jika ada error (misal koneksi putus)
         data = response.json()      # Ubah hasil jadi format Python (Dictionary)
-        return data.get('results', []) # Ambil bagian 'results'
+        results = data.get('results', []) # Ambil bagian 'results'
+        
+        if not results:
+            print(f"Warning: Tidak ada hasil untuk bahan: {bahan_string}")
+        
+        return results
+    except requests.exceptions.Timeout:
+        print(f"Error: Request timeout saat mencari resep dengan bahan {bahan_string}")
+        return []
+    except requests.exceptions.HTTPError as e:
+        print(f"Error HTTP {response.status_code} saat pencarian: {e}")
+        return []
     except Exception as e:
         print(f"Error API Search: {e}")
         return []
@@ -64,27 +75,36 @@ def dapatkan_resep_random(jumlah=3, api_key=None):
 
     Parameters
     - jumlah: jumlah resep yang diminta
-    - api_key: jika disediakan, gunakan ini (berguna untuk UI yang pakai st.secrets)
+    - api_key: tidak digunakan lagi (untuk backward compatibility saja)
     """
-    # Jika api_key tidak diberikan, fallback ke environment
-    if not api_key:
-        api_key = API_KEY
-    if not api_key:
-        # Jangan raise; biarkan caller (UI) menampilkan pesan error
+    # Gunakan API_KEY dari .env
+    if not API_KEY:
+        print("Error: SPOONACULAR_API_KEY tidak ditemukan di file .env")
         return []
 
     params = {
-        "apiKey": api_key,
+        "apiKey": API_KEY,
         "number": jumlah,
         "tags": "main course", # Hanya ambil makanan berat
         "includeNutrition": True
     }
 
     try:
-        response = requests.get(RANDOM_URL, params=params, timeout=10)
+        response = requests.get(RANDOM_URL, params=params, timeout=15)
         response.raise_for_status()
         # API Random struktur datanya 'recipes', bukan 'results'
-        return response.json().get('recipes', [])
+        recipes = response.json().get('recipes', [])
+        
+        if not recipes:
+            print(f"Warning: Tidak ada resep random yang ditemukan")
+        
+        return recipes
+    except requests.exceptions.Timeout:
+        print(f"Error: Request timeout saat mengambil resep random")
+        return []
+    except requests.exceptions.HTTPError as e:
+        print(f"Error HTTP {response.status_code} saat random: {e}")
+        return []
     except Exception as e:
         print(f"Error API Random: {e}")
         return []
@@ -93,7 +113,7 @@ def dapatkan_resep_random(jumlah=3, api_key=None):
 def dapatkan_detail_resep(id_resep):
     """Mengambil detail lengkap satu resep berdasarkan ID-nya."""
     if not API_KEY:
-        print("Error: API Key hilang.")
+        print("Error: API Key hilang - Pastikan SPOONACULAR_API_KEY ada di file .env")
         return None
 
     url = DETAIL_URL.format(id=id_resep)
@@ -103,9 +123,22 @@ def dapatkan_detail_resep(id_resep):
     }
 
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=15)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        
+        # Debug: Print response jika ada masalah
+        if not data:
+            print(f"Error: Response kosong untuk recipe ID {id_resep}")
+            return None
+        
+        return data
+    except requests.exceptions.Timeout:
+        print(f"Error: Request timeout untuk recipe ID {id_resep}")
+        return None
+    except requests.exceptions.HTTPError as e:
+        print(f"Error HTTP {response.status_code} untuk recipe ID {id_resep}: {e}")
+        return None
     except Exception as e:
-        print(f"Error API Detail: {e}")
+        print(f"Error API Detail untuk recipe ID {id_resep}: {e}")
         return None
