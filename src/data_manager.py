@@ -35,12 +35,14 @@ def authenticate_user(username, password):
     """
     df_users = load_user_db() # 1. Baca data terbaru
     
-    # 2. Cari baris yang username-nya sama dengan input
-    user = df_users[df_users["username"] == username]
+    # 2. Cari baris yang username-nya sama dengan input (dengan strip whitespace)
+    user = df_users[df_users["username"].astype(str).str.strip() == str(username).strip()]
     
     if not user.empty:
-        # 3. Jika ketemu, cek passwordnya
-        if str(user.iloc[0]["password"]) == str(password):
+        # 3. Jika ketemu, cek passwordnya (dengan strip whitespace)
+        stored_password = str(user.iloc[0]["password"]).strip()
+        input_password = str(password).strip()
+        if stored_password == input_password:
             return True # Login Sukses
     
     return False # Login Gagal

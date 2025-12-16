@@ -6,6 +6,8 @@ from src.history import add_to_history, get_user_history, get_user_history_detai
 # Import modul PDF yang baru dibuat
 from src.pdf_utils import generate_pdf_bytes
 import plotly.graph_objects as go
+from src.ai_helper import tanya_chef_ai, get_chat_history, add_chat_message, clear_chat_history
+from src import ai_helper
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(layout="wide", page_title="Resep Hari Ini")
@@ -20,6 +22,16 @@ def get_cached_random():
     except Exception as e:
         print(f"Error getting cached random: {e}")
         return []
+
+
+# Caching wrapper for AI calls to reduce repeated external requests
+@st.cache_data(ttl=3600)
+def cached_tanya_chef_ai(prompt, username, api_key_marker):
+    try:
+        return tanya_chef_ai(prompt, username)
+    except Exception as e:
+        return f"[Error saat memanggil AI: {e}]"
+
 
 def create_nutrition_pie_chart(resep_data):
     """
@@ -294,7 +306,6 @@ if 'selected_recipe_id' not in st.session_state:
     st.session_state['selected_recipe_id'] = None
 if 'hasil_pencarian' not in st.session_state:
     st.session_state['hasil_pencarian'] = None
-
 # --- MAIN UI ---
 st.title("Resep Hari Ini")
 
@@ -445,11 +456,67 @@ if st.session_state['logged_in']:
             else:
                 st.info("Kamu belum menyimpan resep apapun. Klik tombol ❤️ pada resep untuk menyimpan.")
 
-        # TAB 4: AI (COMING SOON)
+        # TAB 4: AI (TANYA CHEF AI)
         with tab_ai:
-            st.subheader("Asisten Gizi")
-            st.info("Fitur 'Chef AI' sedang dalam perbaikan oleh teman Rio. Ditunggu ya!")
+            st.subheader("🤖 Tanya Chef AI")
 
+            # Indikator singkat ketersediaan AI eksternal (debugging)
+            try:
+                ai_available = bool(ai_helper.HAS_GENAI and ai_helper.API_KEY)
+            except Exception:
+                ai_available = False
+            st.caption(f"AI eksternal tersedia: {ai_available}")
+
+
+            current_user = st.session_state.get('username')
+            if not current_user:
+                st.warning("Login diperlukan untuk menyimpan percakapan.")
+
+            col_left, col_right = st.columns([3, 1])
+            with col_right:
+                if st.button("🧹 Bersihkan Riwayat AI", use_container_width=True):
+                    if clear_chat_history(current_user):
+                        st.success("Riwayat obrolan AI dibersihkan.")
+                        st.rerun()
+                    else:
+                        st.info("Tidak ada riwayat untuk dibersihkan.")
+
+            # Tampilkan riwayat chat (terbaru di bawah)
+            chat_history = get_chat_history(current_user)
+            if chat_history:
+                with st.expander("Riwayat Percakapan (terbaru 50)", expanded=True):
+                    for msg in chat_history[-50:]:
+                        role = msg.get('role', 'user')
+                        text = msg.get('text', '')
+                        ts = msg.get('timestamp', '')
+                        if role == 'user':
+                            st.markdown(f"**Kamu**  {text}")
+                            if ts: st.caption(ts)
+                        else:
+                            st.markdown(f"**Chef AI**  {text}")
+                            if ts: st.caption(ts)
+            else:
+                st.info("Belum ada percakapan. Tanyakan sesuatu kepada Chef AI!")
+
+            st.markdown("---")
+            st.subheader("Tanyakan kepada Chef AI")
+            ai_input = st.text_area("Tulis pertanyaanmu di sini...", key="ai_input", height=140)
+            send_col, _ = st.columns([1, 3])
+            with send_col:
+                if st.button("Kirim", key="ai_send", use_container_width=True):
+                    if not ai_input or not ai_input.strip():
+                        st.warning("Tulis pertanyaan dulu ya.")
+                    else:
+                        with st.spinner("Menghubungi Chef AI..."):
+                            try:
+                                answer = cached_tanya_chef_ai(ai_input.strip(), current_user, api_key_marker=ai_helper.API_KEY)
+                                st.success("Chef AI sudah merespon — lihat riwayat di atas.")
+                                # Tampilkan jawaban langsung
+                                st.markdown("**Jawaban Chef AI:**")
+                                st.markdown(answer)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Gagal memproses pertanyaan: {e}")
     elif st.session_state['view'] == 'detail':
         tampilkan_halaman_detail(st.session_state['selected_recipe_id'])
 
