@@ -5,6 +5,7 @@ from src.bookmark import add_bookmark, remove_bookmark, get_user_bookmarks
 from src.history import add_to_history, get_user_history, get_user_history_detailed, clear_user_history
 # Import modul PDF yang baru dibuat
 from src.pdf_utils import generate_pdf_bytes
+import plotly.graph_objects as go
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(layout="wide", page_title="Resep Hari Ini")
@@ -19,6 +20,90 @@ def get_cached_random():
     except Exception as e:
         print(f"Error getting cached random: {e}")
         return []
+
+def create_nutrition_pie_chart(resep_data):
+    """
+    Membuat 2 pie chart nutrisi dari data resep.
+    Chart 1: Komposisi nutrisi (Protein, Lemak, Karbohidrat) dalam gram
+    Chart 2: Distribusi kalori dari masing-masing nutrisi
+    """
+    try:
+        nutrition_data = resep_data.get('nutrition', {})
+        nutrients = nutrition_data.get('nutrients', [])
+        
+        # Extract nutrisi utama
+        protein = 0
+        fat = 0
+        carbs = 0
+        
+        for nutrient in nutrients:
+            name = nutrient.get('name', '').lower()
+            value = nutrient.get('amount', 0)
+            
+            if 'protein' in name:
+                protein = round(value, 1)
+            elif 'fat' in name and 'saturated' not in name:
+                fat = round(value, 1)
+            elif 'carbohydrates' in name:
+                carbs = round(value, 1)
+        
+        # Jika ada data nutrisi
+        if protein > 0 or fat > 0 or carbs > 0:
+            # CHART 1: Komposisi Nutrisi (gram)
+            labels_1 = ['Protein', 'Lemak', 'Karbohidrat']
+            values_1 = [protein, fat, carbs]
+            colors = ['#FF6B6B', '#FFA500', '#4ECDC4']
+            
+            fig1 = go.Figure(data=[go.Pie(
+                labels=labels_1,
+                values=values_1,
+                marker=dict(colors=colors),
+                textposition='inside',
+                textinfo='label+value+percent',
+                hovertemplate='<b>%{label}</b><br>%{value}g<br>%{percent}<extra></extra>'
+            )])
+            
+            fig1.update_layout(
+                title="Rincian Nutrisi per serving",
+                height=400,
+                showlegend=True
+            )
+            
+            # CHART 2: Distribusi Kalori dari Nutrisi
+            # Protein: 4 kcal/g, Fat: 9 kcal/g, Carbs: 4 kcal/g
+            calories_protein = protein * 4
+            calories_fat = fat * 9
+            calories_carbs = carbs * 4
+            
+            labels_2 = ['Protein', 'Lemak', 'Karbohidrat']
+            values_2 = [calories_protein, calories_fat, calories_carbs]
+            
+            # Filter out zero values untuk chart
+            labels_2_filtered = [l for l, v in zip(labels_2, values_2) if v > 0]
+            values_2_filtered = [v for v in values_2 if v > 0]
+            colors_filtered = [c for l, c in zip(labels_2, colors) if l in labels_2_filtered]
+            
+            fig2 = go.Figure(data=[go.Pie(
+                labels=labels_2_filtered,
+                values=values_2_filtered,
+                marker=dict(colors=colors_filtered),
+                textposition='inside',
+                textinfo='label+percent+value',
+                hovertemplate='<b>%{label}</b><br>%{value:.0f} kcal<br>%{percent}<extra></extra>'
+            )])
+            
+            fig2.update_layout(
+                title="Distribusi Kalori dari Nutrisi",
+                height=400,
+                showlegend=True
+            )
+            
+            return fig1, fig2, protein, fat, carbs
+        else:
+            return None, None, 0, 0, 0
+    except Exception as e:
+        print(f"Error creating nutrition chart: {e}")
+        return None, None, 0, 0, 0
 
 def tampilkan_grid_resep(daftar_resep, mode_hapus=False, source="umum"):
     """
@@ -142,7 +227,32 @@ def tampilkan_halaman_detail(recipe_id):
             except Exception as e:
                 st.error(f"Gagal membuat PDF: {e}")
         # ---------------------------------------
-
+        
+        # Tampilkan Pie Chart Nutrisi
+        st.markdown("---")
+        st.subheader("📊 Analisis Nutrisi")
+        
+        fig1, fig2, protein, fat, carbs = create_nutrition_pie_chart(detail_resep)
+        if fig1 and fig2:
+            # Tampilkan kedua chart side by side
+            col_chart1, col_chart2 = st.columns(2)
+            with col_chart1:
+                st.plotly_chart(fig1, use_container_width=True)
+            with col_chart2:
+                st.plotly_chart(fig2, use_container_width=True)
+            
+            # Tampilkan statistik tambahan
+            col_n1, col_n2, col_n3 = st.columns(3)
+            with col_n1:
+                st.metric("Protein", f"{protein}g")
+            with col_n2:
+                st.metric("Lemak", f"{fat}g")
+            with col_n3:
+                st.metric("Karbohidrat", f"{carbs}g")
+        else:
+            st.info("Data nutrisi tidak tersedia untuk resep ini.")
+        
+        st.markdown("---")
         st.subheader("Ringkasan")
         st.markdown(detail_resep.get('summary', 'Ringkasan tidak tersedia.'), unsafe_allow_html=True)
 

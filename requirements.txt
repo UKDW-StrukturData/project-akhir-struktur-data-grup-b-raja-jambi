@@ -11,3 +11,5 @@ fpdf
 beautifulsoup4
 python-docx
 pypdf
+plotly
+reportlab
