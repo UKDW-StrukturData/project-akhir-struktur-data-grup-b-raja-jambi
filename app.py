@@ -6,7 +6,7 @@ from src.history import add_to_history, get_user_history, get_user_history_detai
 # Import modul PDF yang baru dibuat
 from src.pdf_utils import generate_pdf_bytes
 import plotly.graph_objects as go
-from src.ai_helper import tanya_chef_ai, get_chat_history, add_chat_message, clear_chat_history
+from src.ai_helper import tanya_chef_ai, get_chat_history, add_chat_message, clear_chat_history, ai_search_recipes
 from src import ai_helper
 
 # --- KONFIGURASI HALAMAN ---
@@ -31,6 +31,15 @@ def cached_tanya_chef_ai(prompt, username, api_key_marker):
         return tanya_chef_ai(prompt, username)
     except Exception as e:
         return f"[Error saat memanggil AI: {e}]"
+
+
+@st.cache_data(ttl=3600)
+def cached_ai_search_recipes(query, username, max_results=5, api_key_marker=None):
+    try:
+        return ai_search_recipes(query, username, max_results=max_results)
+    except Exception as e:
+        print(f"AI search error: {e}")
+        return []
 
 
 def create_nutrition_pie_chart(resep_data):
@@ -306,6 +315,9 @@ if 'selected_recipe_id' not in st.session_state:
     st.session_state['selected_recipe_id'] = None
 if 'hasil_pencarian' not in st.session_state:
     st.session_state['hasil_pencarian'] = None
+if 'hasil_pencarian_ai' not in st.session_state:
+    st.session_state['hasil_pencarian_ai'] = None
+
 # --- MAIN UI ---
 st.title("Resep Hari Ini")
 
@@ -471,6 +483,29 @@ if st.session_state['logged_in']:
             current_user = st.session_state.get('username')
             if not current_user:
                 st.warning("Login diperlukan untuk menyimpan percakapan.")
+
+            # -- AI Recipe Search UI --
+            st.markdown("**Cari Resep dengan AI (masukkan bahan atau tipe masakan):**")
+            ai_search_input = st.text_input("Contoh: ayam, tomat atau 'soto ayam'", key="ai_search_input")
+            if st.button("Cari dengan AI", key="ai_search_btn", use_container_width=True):
+                if not ai_search_input or not ai_search_input.strip():
+                    st.warning("Masukkan bahan atau nama resep untuk dicari.")
+                else:
+                    with st.spinner("Chef AI sedang mencari resep..."):
+                        try:
+                            hasil_ai = cached_ai_search_recipes(ai_search_input.strip(), current_user, max_results=12, api_key_marker=ai_helper.API_KEY)
+                            st.session_state['hasil_pencarian_ai'] = hasil_ai
+                        except Exception as e:
+                            st.error(f"Pencarian AI gagal: {e}")
+
+            # Jika ada hasil pencarian AI, tampilkan dengan grid resep penuh (view, bookmark, PDF, history)
+            if st.session_state.get('hasil_pencarian_ai'):
+                st.markdown("---")
+                st.subheader("🎯 Hasil Pencarian AI")
+                if st.button("❌ Hapus hasil pencarian AI", key="clear_ai_search"):
+                    st.session_state['hasil_pencarian_ai'] = None
+                    st.rerun()
+                tampilkan_grid_resep(st.session_state['hasil_pencarian_ai'], source="ai_search")
 
             col_left, col_right = st.columns([3, 1])
             with col_right:
